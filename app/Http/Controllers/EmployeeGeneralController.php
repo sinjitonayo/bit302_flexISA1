@@ -10,18 +10,48 @@ use Carbon\Carbon;
 
 class EmployeeGeneralController extends Controller
 {
-    public function dashboard()
+    public function dashboard(Request $request)
     {
         $employee = Auth::guard('employee')->user();
+        $choosen_date = NULL;
+        $choosen_schedule = NULL;
+        $now = Carbon::now();
+        $week_dates = [
+            $now->startOfWeek(Carbon::MONDAY)->format('Y-m-d'),
+            $now
+                ->startOfWeek(Carbon::MONDAY)
+                ->addDays(1)
+                ->format('Y-m-d'),
+            $now
+                ->startOfWeek(Carbon::MONDAY)
+                ->addDays(2)
+                ->format('Y-m-d'),
+            $now
+                ->startOfWeek(Carbon::MONDAY)
+                ->addDays(3)
+                ->format('Y-m-d'),
+            $now
+                ->startOfWeek(Carbon::MONDAY)
+                ->addDays(4)
+                ->format('Y-m-d'),
+            $now
+                ->startOfWeek(Carbon::MONDAY)
+                ->addDays(5)
+                ->format('Y-m-d'),
+        ];
+        if($request->has('date')){
+            $choosen_date = $request->input('date');
+            $choosen_schedule = $employee->daily_schedules()->where('date',$choosen_date)->first();
+        }
+
         return view('employee.dashboard', [
+            'choosen_date' => $choosen_date,
+            'choosen_schedule'=> $choosen_schedule,
+            'week_dates'=>$week_dates,
             'fwa_request' => $employee
                 ->fwa_requests()
                 ->where('status', '!=', 'rejected')
                 ->orderBy('request_date', 'DESC')
-                ->first(),
-            'today_schedule' => $employee
-                ->daily_schedules()
-                ->where('date', Carbon::now()->format('Y-m-d'))
                 ->first(),
             'role' => $employee->role(),
         ]);
@@ -36,7 +66,7 @@ class EmployeeGeneralController extends Controller
         ]);
     }
     public function ajaxSubmitFWARequest(Request $request)
-    {  
+    {
         $data = $request->validate([
             'work_type' => 'required|in:flexi-hour,work-from-home,hybrid',
             'description' => 'required',
@@ -47,7 +77,9 @@ class EmployeeGeneralController extends Controller
         $data['status'] = 'pending';
         $data['employee_id'] = Auth::guard('employee')->id();
         $fwa_request = FWARequest::create($data);
-        Auth::guard('employee')->user()->supervisor->notify(new \App\Notifications\PendingFWARequest());
+        Auth::guard('employee')
+            ->user()
+            ->supervisor->notify(new \App\Notifications\PendingFWARequest());
         return response()->json([
             'success' => true,
             'message' => 'Success',
@@ -55,7 +87,94 @@ class EmployeeGeneralController extends Controller
         ]);
     }
 
-
+    public function manageDailySchedule(Request $request)
+    {
+        $employee = Auth::guard('employee')->user();
+        $choosen_date = NULL;
+        $choosen_schedule = NULL;
+        if($request->has('date')){
+            $choosen_date = $request->input('date');
+            $choosen_schedule = $employee->daily_schedules()->where('date',$choosen_date)->first();
+        }
+        
+        $now = Carbon::now();
+        $weekStartDate = $now->startOfWeek(Carbon::MONDAY)->format('Y-m-d');
+        $weekEndDate = $now->endOfWeek(Carbon::SATURDAY)->format('Y-m-d');
+        $week_dates = [
+            $now->startOfWeek(Carbon::MONDAY)->format('Y-m-d'),
+            $now
+                ->startOfWeek(Carbon::MONDAY)
+                ->addDays(1)
+                ->format('Y-m-d'),
+            $now
+                ->startOfWeek(Carbon::MONDAY)
+                ->addDays(2)
+                ->format('Y-m-d'),
+            $now
+                ->startOfWeek(Carbon::MONDAY)
+                ->addDays(3)
+                ->format('Y-m-d'),
+            $now
+                ->startOfWeek(Carbon::MONDAY)
+                ->addDays(4)
+                ->format('Y-m-d'),
+            $now
+                ->startOfWeek(Carbon::MONDAY)
+                ->addDays(5)
+                ->format('Y-m-d'),
+        ];
+        $daily_schedules = $employee->daily_schedules()->orderBy('date','ASC')->where('date', '>=', $weekStartDate)
+            ->where('date', '<=', $weekEndDate)
+            ->get()
+            ->keyBy('date');
+        return view('employee.daily-schedule.index', [
+            'choosen_date' => $choosen_date,
+            'choosen_schedule'=> $choosen_schedule,
+            'week_dates' => $week_dates,
+            'daily_schedules' => $daily_schedules,
+            'weekEndDate' => $weekEndDate,
+            'now' => $now->format('Y-m-d'),
+            'today_schedule' => $employee
+                ->daily_schedules()
+                ->where('date', Carbon::now()->format('Y-m-d'))
+                ->first(),
+        ]);
+    }
+    public function ajaxDailySchedule(DailySchedule $daily_schedule, Request $request)
+    {
+        return response()->json([
+            'success' => true,
+            'message' => 'Success',
+            'data' => $fwa_request,
+            'html' => view('employee.daily-schedule.edit-component')->render(),
+        ]);
+    }
+    public function ajaxSaveDailySchedule(Request $request)
+    {
+        $data = $request->validate([
+            'date'=>'required',
+            'work_location' => 'required',
+            'work_hours' => 'required',
+            'work_report' => 'required',
+        ]);
+        $data['employee_id'] = Auth::guard('employee')->id();
+        $fwa_request = DailySchedule::updateOrCreate(
+            [
+                'date' => $data['date'],
+                'employee_id' => $data['employee_id'],
+            ],
+            [
+                'work_location' => $data['work_location'],
+                'work_hours' => $data['work_hours'],
+                'work_report' => $data['work_report'],
+            ],
+        );
+        return response()->json([
+            'success' => true,
+            'message' => 'Success',
+            'data' => $fwa_request,
+        ]);
+    }
 
     // SUPERVISORS
     public function reviewFWARequest()
